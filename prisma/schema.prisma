@@ -1,13 +1,73 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Urgencia {
+  Baixa
+  Media
+  Alta
+  Urgente
+}
+
+enum StatusOS {
+  Aberto
+  AguardandoAvaliacao @map("Aguardando Avaliação")
+  SemSolucao          @map("Sem Solução")
+  EmConserto          @map("Em Conserto")
+  Pronto
+  Entregue
+}
+
+enum FormaContato {
+  WhatsApp
+  Email
+  PorEscrito @map("Por Escrito")
+}
+
+enum FormaPagamento {
+  Pix
+  Dinheiro
+  CartaoCredito @map("Cartão de Crédito")
+  CartaoDebito  @map("Cartão de Débito")
+  Boleto
+}
+
+enum TipoLancamento {
+  Sinal
+  Parcela
+  PagamentoTotal  @map("Pagamento Total")
+  TaxaArmazenagem @map("Taxa de Armazenagem")
+}
+
+model OrdemServico {
+  identificador     String        @id
+  cliente           String
+  aparelho          String
+  defeito           String
+  whatsapp          String?
+  email             String?
+  formaContato      FormaContato?
+  urgencia          Urgencia
+  status            StatusOS
+  prazoDiasUteis    Int
+  valorTotal        Float         @default(0)
+  dataEntrada       DateTime      @default(now())
+  dataAvaliacao     DateTime?
+  dataUltimoContato DateTime?
+  pagamentos        Pagamento[]
+}
+
+model Pagamento {
+  id             String         @id @default(uuid())
+  valor          Float
+  data           DateTime       @default(now())
+  formaPagamento FormaPagamento
+  tipoLancamento TipoLancamento
+  ordemServicoId String
+  ordemServico   OrdemServico   @relation(fields: [ordemServicoId], references: [identificador])
 }
