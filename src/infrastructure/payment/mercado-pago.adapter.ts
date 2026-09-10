@@ -1,4 +1,6 @@
-export class MercadoPagoAdapter {
+import { PaymentGateway } from './payment-gateway.port';
+
+export class MercadoPagoAdapter implements PaymentGateway {
     private readonly token = process.env.MP_ACCESS_TOKEN!;
 
     async gerarLink(ordemServicoId: string, valor: number, descricao: string): Promise<string> {
@@ -14,6 +16,6 @@ export class MercadoPagoAdapter {
             }),
         });
         const dados = await resposta.json();
-        return dados.init_point; // link de pagamento pronto
+        return dados.init_point;
     }
 }

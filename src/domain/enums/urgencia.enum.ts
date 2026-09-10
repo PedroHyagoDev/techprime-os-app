@@ -1,6 +1,6 @@
 export enum Urgencia {
     Baixa =  'Baixa',
-    Media =  'Média',
+    Media =  'Media',
     Alta =  'Alta',
     Urgente =  'Urgente'
 }
