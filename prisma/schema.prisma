@@ -70,3 +70,8 @@ model Pagamento {
   ordemServicoId String
   ordemServico   OrdemServico   @relation(fields: [ordemServicoId], references: [identificador])
 }
+model ModeloMensagem {
+  id       String   @id @default(uuid())
+  status   StatusOS @unique
+  mensagem String
+}

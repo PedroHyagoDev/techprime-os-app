@@ -5,6 +5,7 @@ export class GerarLinkPagamentoUseCase {
     constructor(
         private readonly repository: OrdemServicoRepository,
         private readonly gateway: PaymentGateway,
+        
     ) {}
 
     async execute(ordemServicoId: string): Promise<string> {

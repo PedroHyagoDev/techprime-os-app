@@ -1,4 +1,3 @@
-
 import { Pagamento } from './pagamento.entity';
 import {FormaContato} from '../enums/formas-contato.enum';
 import { Urgencia } from '../enums/urgencia.enum';

@@ -1,0 +1,774 @@
+diff --git a/src/app.module.ts b/src/app.module.ts
+index 29a6193..f5ceb7d 100644
+--- a/src/app.module.ts
++++ b/src/app.module.ts
+@@ -1,11 +1,12 @@
+ import { Module } from '@nestjs/common';
++import { ScheduleModule } from '@nestjs/schedule';
+ import { AppController } from './app.controller';
+ import { AppService } from './app.service';
+-import { ScheduleModule } from '@nestjs/schedule'; 
++import { OrdemServicoModule } from './presentation/ordem-servico.module';
+ 
+ @Module({
+-  imports: [],
+-  controllers: [AppController],
+-  providers: [AppService],
++    imports: [ScheduleModule.forRoot(), OrdemServicoModule],
++    controllers: [AppController],
++    providers: [AppService],
+ })
+ export class AppModule {}
+diff --git a/src/app/index.tsx b/src/app/index.tsx
+deleted file mode 100644
+index f47e454..0000000
+--- a/src/app/index.tsx
++++ /dev/null
+@@ -1,42 +0,0 @@
+-import { useEffect, useState } from 'react';
+-import { View, Text, FlatList, StyleSheet, TouchableOpacity } from 'react-native';
+-import { useRouter } from 'expo-router';
+-
+-const API_URL = 'http://SEU_IP_LOCAL:3000'; // troque pro IP da sua máquina na rede
+-
+-export default function ListaOS() {
+-    const [ordens, setOrdens] = useState<any[]>([]);
+-    const router = useRouter();
+-
+-    useEffect(() => {
+-        fetch(`${API_URL}/ordens-servico`)
+-            .then((r) => r.json())
+-            .then(setOrdens);
+-    }, []);
+-
+-    return (
+-        <View style={styles.container}>
+-            <TouchableOpacity style={styles.botao} onPress={() => router.push('/nova')}>
+-                <Text style={styles.botaoTexto}>+ Nova OS</Text>
+-            </TouchableOpacity>
+-            <FlatList
+-                data={ordens}
+-                keyExtractor={(item) => item.identificador}
+-                renderItem={({ item }) => (
+-                    <View style={styles.card}>
+-                        <Text style={styles.titulo}>OS {item.identificador} — {item.cliente}</Text>
+-                        <Text>{item.aparelho} · {item.status}</Text>
+-                    </View>
+-                )}
+-            />
+-        </View>
+-    );
+-}
+-
+-const styles = StyleSheet.create({
+-    container: { flex: 1, padding: 16 },
+-    botao: { backgroundColor: '#2563eb', padding: 16, borderRadius: 8, marginBottom: 16 },
+-    botaoTexto: { color: '#fff', textAlign: 'center', fontSize: 18, fontWeight: 'bold' },
+-    card: { padding: 16, borderWidth: 1, borderColor: '#ddd', borderRadius: 8, marginBottom: 8 },
+-    titulo: { fontSize: 16, fontWeight: 'bold' },
+-});
+\ No newline at end of file
+diff --git a/src/application/use-cases/ordem-servico.repository.ts b/src/application/ports/ordem-servico.repository.ts
+similarity index 55%
+rename from src/application/use-cases/ordem-servico.repository.ts
+rename to src/application/ports/ordem-servico.repository.ts
+index 7b32908..4ffa6a3 100644
+--- a/src/application/use-cases/ordem-servico.repository.ts
++++ b/src/application/ports/ordem-servico.repository.ts
+@@ -1,7 +1,10 @@
+ import { OrdemServico } from '../../domain/entities/ordem-servico.entity';
++import { StatusOS } from '../../domain/enums/status-os.enum';
+ 
+ export interface OrdemServicoRepository {
+     proximoNumero(): Promise<string>;
+     salvar(ordem: OrdemServico): Promise<OrdemServico>;
+     listarTodas(): Promise<OrdemServico[]>;
+-}
+\ No newline at end of file
++    buscarPorId(identificador: string): Promise<OrdemServico>;
++    atualizarStatus(identificador: string, status: StatusOS): Promise<void>;
++}
+diff --git a/src/application/use-cases/ports/pagamento-repository.ts b/src/application/ports/pagamento.repository.ts
+similarity index 100%
+rename from src/application/use-cases/ports/pagamento-repository.ts
+rename to src/application/ports/pagamento.repository.ts
+diff --git a/src/application/use-cases/atualizar-status-os.use-case.ts b/src/application/use-cases/atualizar-status-os.usecase.ts
+similarity index 100%
+rename from src/application/use-cases/atualizar-status-os.use-case.ts
+rename to src/application/use-cases/atualizar-status-os.usecase.ts
+diff --git a/src/application/use-cases/criar-ordem-servico.usecase.ts b/src/application/use-cases/criar-ordem-servico.usecase.ts
+index 0f22c07..80d84b9 100644
+--- a/src/application/use-cases/criar-ordem-servico.usecase.ts
++++ b/src/application/use-cases/criar-ordem-servico.usecase.ts
+@@ -1,10 +1,11 @@
+-import {OrdemServico} from '../../domain/entities/ordem-servico.entity';
++import { OrdemServico } from '../../domain/entities/ordem-servico.entity';
+ import { Urgencia } from '../../domain/enums/urgencia.enum';
+ import { StatusOS } from '../../domain/enums/status-os.enum';
+ import { FormaContato } from '../../domain/enums/formas-contato.enum';
++import { OrdemServicoRepository } from '../ports/ordem-servico.repository';
+ 
+ interface CriarOrdemServicoRequest {
+-    numeroOS: string;
++    numeroOS?: string;
+     cliente: string;
+     aparelho: string;
+     defeito: string;
+@@ -14,32 +15,32 @@ interface CriarOrdemServicoRequest {
+     urgencia: Urgencia;
+ }
+ 
+-    export class CriarOrdemServicoUseCase {
+-        execute(input: CriarOrdemServicoRequest): OrdemServico {
+-            const ordem = new OrdemServico();
+-            
+-            ordem.identificador = input.numeroOS;
+-            ordem.cliente = input.cliente;
+-            ordem.aparelho = input.aparelho;
+-            ordem.defeito = input.defeito;
+-            ordem.urgencia = input.urgencia;
+-            ordem.whatsapp = input.whatsapp;
+-            ordem.email = input.email;
+-            ordem.formaContato = input.formaContato;
+-            ordem.status = StatusOS.Aberto;
+-            ordem.dataEntrada = new Date();
+-            
++const prazoPorUrgenciaMap: Record<Urgencia, number> = {
++    [Urgencia.Baixa]: 7,
++    [Urgencia.Media]: 5,
++    [Urgencia.Alta]: 3,
++    [Urgencia.Urgente]: 1,
++};
+ 
++export class CriarOrdemServicoUseCase {
++    constructor(private readonly repository: OrdemServicoRepository) {}
+ 
+-        const prazoPorUrgenciaMap: Record<Urgencia, number> = {
+-            [Urgencia.Baixa]: 7,
+-            [Urgencia.Media]: 4,
+-            [Urgencia.Alta]: 2,
+-            [Urgencia.Urgente]: 1
+-        };
++    async execute(input: CriarOrdemServicoRequest): Promise<OrdemServico> {
++        const ordem = new OrdemServico();
+ 
+-            ordem.prazoDiasUteis = prazoPorUrgenciaMap[input.urgencia];
++        ordem.identificador = input.numeroOS ?? (await this.repository.proximoNumero());
++        ordem.cliente = input.cliente;
++        ordem.aparelho = input.aparelho;
++        ordem.defeito = input.defeito;
++        ordem.urgencia = input.urgencia;
++        ordem.whatsapp = input.whatsapp;
++        ordem.email = input.email;
++        ordem.formaContato = input.formaContato;
++        ordem.status = StatusOS.Aberto;
++        ordem.dataEntrada = new Date();
++        ordem.valorTotal = 0;
++        ordem.prazoDiasUteis = prazoPorUrgenciaMap[input.urgencia];
+ 
+-            return ordem;
+-        }
+-    }
+\ No newline at end of file
++        return this.repository.salvar(ordem);
++    }
++}
+diff --git a/src/application/use-cases/gerar-link-pagamento.ts b/src/application/use-cases/gerar-link-pagamento.usecase.ts
+similarity index 78%
+rename from src/application/use-cases/gerar-link-pagamento.ts
+rename to src/application/use-cases/gerar-link-pagamento.usecase.ts
+index 8996832..6b2e548 100644
+--- a/src/application/use-cases/gerar-link-pagamento.ts
++++ b/src/application/use-cases/gerar-link-pagamento.usecase.ts
+@@ -1,10 +1,10 @@
+-import { MercadoPagoAdapter } from '../../infrastructure/payment/mercado-pago.adapter';
+ import { OrdemServicoRepository } from '../ports/ordem-servico.repository';
++import { PaymentGateway } from '../../infrastructure/payment/payment-gateway.port';
+ 
+ export class GerarLinkPagamentoUseCase {
+     constructor(
+         private readonly repository: OrdemServicoRepository,
+-        private readonly gateway: MercadoPagoAdapter,
++        private readonly gateway: PaymentGateway,
+     ) {}
+ 
+     async execute(ordemServicoId: string): Promise<string> {
+@@ -15,4 +15,4 @@ export class GerarLinkPagamentoUseCase {
+             `OS ${ordem.identificador} - ${ordem.aparelho}`,
+         );
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/src/application/use-cases/listar-ordens-servico.usecase.ts b/src/application/use-cases/listar-ordens-servico.usecase.ts
+new file mode 100644
+index 0000000..8a3a568
+--- /dev/null
++++ b/src/application/use-cases/listar-ordens-servico.usecase.ts
+@@ -0,0 +1,10 @@
++import { OrdemServico } from '../../domain/entities/ordem-servico.entity';
++import { OrdemServicoRepository } from '../ports/ordem-servico.repository';
++
++export class ListarOrdensServicoUseCase {
++    constructor(private readonly repository: OrdemServicoRepository) {}
++
++    async execute(): Promise<OrdemServico[]> {
++        return this.repository.listarTodas();
++    }
++}
+diff --git a/src/application/use-cases/registrar-pagmento.usecase.ts b/src/application/use-cases/registrar-pagamento.usecase.ts
+similarity index 100%
+rename from src/application/use-cases/registrar-pagmento.usecase.ts
+rename to src/application/use-cases/registrar-pagamento.usecase.ts
+diff --git a/src/domain/service/calculae-status-pagamento.service.ts b/src/domain/services/calcular-status-pagamento.service.ts
+similarity index 100%
+rename from src/domain/service/calculae-status-pagamento.service.ts
+rename to src/domain/services/calcular-status-pagamento.service.ts
+diff --git a/src/infrastructure/database/ordem-servico.prisma-repository.ts b/src/infrastructure/database/ordem-servico.prisma-repository.ts
+new file mode 100644
+index 0000000..c4a2f5b
+--- /dev/null
++++ b/src/infrastructure/database/ordem-servico.prisma-repository.ts
+@@ -0,0 +1,86 @@
++import { PrismaService } from './prisma.service';
++import { OrdemServico } from '../../domain/entities/ordem-servico.entity';
++import { OrdemServicoRepository } from '../../application/ports/ordem-servico.repository';
++import { Urgencia } from '../../domain/enums/urgencia.enum';
++import { StatusOS } from '../../domain/enums/status-os.enum';
++import { FormaContato } from '../../domain/enums/formas-contato.enum';
++
++function chavePorValor<T extends Record<string, string>>(enumObj: T, valor: string): keyof T {
++    const chave = Object.keys(enumObj).find((k) => enumObj[k as keyof T] === valor);
++    if (!chave) throw new Error(`Valor inválido: ${valor}`);
++    return chave as keyof T;
++}
++
++function paraEntidade(r: any): OrdemServico {
++    const ordem = new OrdemServico();
++    ordem.identificador = r.identificador;
++    ordem.cliente = r.cliente;
++    ordem.aparelho = r.aparelho;
++    ordem.defeito = r.defeito;
++    ordem.whatsapp = r.whatsapp ?? undefined;
++    ordem.email = r.email ?? undefined;
++    ordem.formaContato = r.formaContato ? (FormaContato as any)[r.formaContato] : undefined;
++    ordem.urgencia = (Urgencia as any)[r.urgencia];
++    ordem.status = (StatusOS as any)[r.status];
++    ordem.prazoDiasUteis = r.prazoDiasUteis;
++    ordem.valorTotal = r.valorTotal;
++    ordem.dataEntrada = r.dataEntrada;
++    ordem.dataAvaliacao = r.dataAvaliacao ?? undefined;
++    ordem.dataUltimoContato = r.dataUltimoContato ?? undefined;
++    return ordem;
++}
++
++export class OrdemServicoPrismaRepository implements OrdemServicoRepository {
++    constructor(private readonly prisma: PrismaService) {}
++
++    async proximoNumero(): Promise<string> {
++        const total = await this.prisma.ordemServico.count();
++        return String(total + 1).padStart(5, '0');
++    }
++
++    async salvar(ordem: OrdemServico): Promise<OrdemServico> {
++        await this.prisma.ordemServico.upsert({
++            where: { identificador: ordem.identificador },
++            create: {
++                identificador: ordem.identificador,
++                cliente: ordem.cliente,
++                aparelho: ordem.aparelho,
++                defeito: ordem.defeito,
++                whatsapp: ordem.whatsapp,
++                email: ordem.email,
++                formaContato: ordem.formaContato
++                    ? (chavePorValor(FormaContato, ordem.formaContato) as any)
++                    : undefined,
++                urgencia: chavePorValor(Urgencia, ordem.urgencia) as any,
++                status: chavePorValor(StatusOS, ordem.status) as any,
++                prazoDiasUteis: ordem.prazoDiasUteis,
++                valorTotal: ordem.valorTotal,
++                dataEntrada: ordem.dataEntrada,
++            },
++            update: {
++                status: chavePorValor(StatusOS, ordem.status) as any,
++                valorTotal: ordem.valorTotal,
++                dataAvaliacao: ordem.dataAvaliacao,
++                dataUltimoContato: ordem.dataUltimoContato,
++            },
++        });
++        return ordem;
++    }
++
++    async listarTodas(): Promise<OrdemServico[]> {
++        const registros = await this.prisma.ordemServico.findMany({ orderBy: { dataEntrada: 'desc' } });
++        return registros.map(paraEntidade);
++    }
++
++    async buscarPorId(identificador: string): Promise<OrdemServico> {
++        const registro = await this.prisma.ordemServico.findUniqueOrThrow({ where: { identificador } });
++        return paraEntidade(registro);
++    }
++
++    async atualizarStatus(identificador: string, status: StatusOS): Promise<void> {
++        await this.prisma.ordemServico.update({
++            where: { identificador },
++            data: { status: chavePorValor(StatusOS, status) as any },
++        });
++    }
++}
+diff --git a/src/infrastructure/payment/database/pagamento.prisma-repository.ts b/src/infrastructure/database/pagamento.prisma-repository.ts
+similarity index 91%
+rename from src/infrastructure/payment/database/pagamento.prisma-repository.ts
+rename to src/infrastructure/database/pagamento.prisma-repository.ts
+index 4e58f11..fb3b322 100644
+--- a/src/infrastructure/payment/database/pagamento.prisma-repository.ts
++++ b/src/infrastructure/database/pagamento.prisma-repository.ts
+@@ -23,8 +23,6 @@ export class PagamentoPrismaRepository implements PagamentoRepository {
+                 ordemServicoId: pagamento.ordemServicoId,
+             },
+         });
+-        // também atualiza valorTotal acumulado se você quiser somar aqui,
+-        // ou deixa só na consulta (recomendado, evita duplicidade de fonte de verdade)
+         return pagamento;
+     }
+ 
+@@ -40,4 +38,4 @@ export class PagamentoPrismaRepository implements PagamentoRepository {
+             return p;
+         });
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/src/infrastructure/payment/database/prisma.service.ts b/src/infrastructure/database/prisma.service.ts
+similarity index 65%
+rename from src/infrastructure/payment/database/prisma.service.ts
+rename to src/infrastructure/database/prisma.service.ts
+index 4235c98..3632133 100644
+--- a/src/infrastructure/payment/database/prisma.service.ts
++++ b/src/infrastructure/database/prisma.service.ts
+@@ -1,12 +1,18 @@
+ import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+ import { PrismaClient } from '@prisma/client';
++import { PrismaPg } from '@prisma/adapter-pg';
+ 
+ @Injectable()
+ export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
++    constructor() {
++        const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
++        super({ adapter });
++    }
++
+     async onModuleInit() {
+         await this.$connect();
+     }
+     async onModuleDestroy() {
+         await this.$disconnect();
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/src/infrastructure/payment/jobs/taxa-armazenamento.jobs.ts b/src/infrastructure/jobs/taxa-armazenagem.job.ts
+similarity index 57%
+rename from src/infrastructure/payment/jobs/taxa-armazenamento.jobs.ts
+rename to src/infrastructure/jobs/taxa-armazenagem.job.ts
+index 0ff0d8c..7946baf 100644
+--- a/src/infrastructure/payment/jobs/taxa-armazenamento.jobs.ts
++++ b/src/infrastructure/jobs/taxa-armazenagem.job.ts
+@@ -1,9 +1,6 @@
+ import { Injectable } from '@nestjs/common';
+ import { Cron, CronExpression } from '@nestjs/schedule';
+ import { PrismaService } from '../database/prisma.service';
+-import { StatusOS } from '../../domain/enums/status-os.enum';
+-import { TipoLancamento } from '../../domain/enums/tipo-lancamento.enum';
+-import { FormaPagamento } from '../../domain/enums/forma-pagamento.enum';
+ 
+ @Injectable()
+ export class TaxaArmazenagemJob {
+@@ -21,9 +18,8 @@ export class TaxaArmazenagemJob {
+         const hoje = new Date();
+ 
+         for (const ordem of ordens) {
+-            const diasDesdeAvaliacao = Math.floor(
+-                (hoje.getTime() - ordem.dataAvaliacao!.getTime()) / (1000 * 60 * 60 * 24),
+-            ) + 1; // dia da avaliação conta como dia 1
++            const diasDesdeAvaliacao =
++                Math.floor((hoje.getTime() - ordem.dataAvaliacao!.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+ 
+             if (diasDesdeAvaliacao <= 30) continue;
+ 
+@@ -32,13 +28,11 @@ export class TaxaArmazenagemJob {
+             await this.prisma.pagamento.create({
+                 data: {
+                     valor,
+-                    formaPagamento: FormaPagamento.Dinheiro as any, // placeholder, é taxa não é pagamento real
+-                    tipoLancamento: 'TaxaArmazenagem' as any,
++                    formaPagamento: 'Dinheiro',
++                    tipoLancamento: 'TaxaArmazenagem',
+                     ordemServicoId: ordem.identificador,
+                 },
+             });
+-
+-            // aqui você chama o notifier pra avisar o cliente da taxa (opcional, mesmo Adapter do item 5)
+         }
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/src/notification/notfication.port.ts b/src/infrastructure/notification/notifier.port.ts
+similarity index 100%
+rename from src/notification/notfication.port.ts
+rename to src/infrastructure/notification/notifier.port.ts
+diff --git a/src/notification/whatsapp.adapter.ts b/src/infrastructure/notification/whatsapp.adapter.ts
+similarity index 100%
+rename from src/notification/whatsapp.adapter.ts
+rename to src/infrastructure/notification/whatsapp.adapter.ts
+diff --git a/src/infrastructure/payment/database/prisma b/src/infrastructure/payment/database/prisma
+deleted file mode 100644
+index e69de29..0000000
+diff --git a/src/infrastructure/payment/mercado-pago.adapter.ts b/src/infrastructure/payment/mercado-pago.adapter.ts
+index 21f1093..0b6bfbc 100644
+--- a/src/infrastructure/payment/mercado-pago.adapter.ts
++++ b/src/infrastructure/payment/mercado-pago.adapter.ts
+@@ -1,4 +1,6 @@
+-export class MercadoPagoAdapter {
++import { PaymentGateway } from './payment-gateway.port';
++
++export class MercadoPagoAdapter implements PaymentGateway {
+     private readonly token = process.env.MP_ACCESS_TOKEN!;
+ 
+     async gerarLink(ordemServicoId: string, valor: number, descricao: string): Promise<string> {
+@@ -14,6 +16,6 @@ export class MercadoPagoAdapter {
+             }),
+         });
+         const dados = await resposta.json();
+-        return dados.init_point; // link de pagamento pronto
++        return dados.init_point;
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/src/infrastructure/payment/payment-gateway.port.ts b/src/infrastructure/payment/payment-gateway.port.ts
+new file mode 100644
+index 0000000..427b3a7
+--- /dev/null
++++ b/src/infrastructure/payment/payment-gateway.port.ts
+@@ -0,0 +1,3 @@
++export interface PaymentGateway {
++    gerarLink(ordemServicoId: string, valor: number, descricao: string): Promise<string>;
++}
+diff --git a/src/infrastructure/payment/payment-getway.port.ts b/src/infrastructure/payment/payment-getway.port.ts
+deleted file mode 100644
+index e69de29..0000000
+diff --git a/src/main.ts b/src/main.ts
+index f76bc8d..62f1ea2 100644
+--- a/src/main.ts
++++ b/src/main.ts
+@@ -1,8 +1,10 @@
+ import { NestFactory } from '@nestjs/core';
++import { ValidationPipe } from '@nestjs/common';
+ import { AppModule } from './app.module';
+ 
+ async function bootstrap() {
+-  const app = await NestFactory.create(AppModule);
+-  await app.listen(process.env.PORT ?? 3000);
++    const app = await NestFactory.create(AppModule);
++    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
++    await app.listen(process.env.PORT ?? 3000);
+ }
+ bootstrap();
+diff --git a/src/presentation/dto/criar-ordem-servico.dto.ts b/src/presentation/dto/criar-ordem-servico.dto.ts
+new file mode 100644
+index 0000000..870e6be
+--- /dev/null
++++ b/src/presentation/dto/criar-ordem-servico.dto.ts
+@@ -0,0 +1,14 @@
++import { IsString, IsNotEmpty, IsOptional, IsEnum } from 'class-validator';
++import { Urgencia } from '../../domain/enums/urgencia.enum';
++import { FormaContato } from '../../domain/enums/formas-contato.enum';
++
++export class CriarOrdemServicoDto {
++    @IsString() @IsNotEmpty() cliente!: string;
++    @IsString() @IsNotEmpty() aparelho!: string;
++    @IsString() @IsNotEmpty() defeito!: string;
++    @IsEnum(Urgencia) urgencia!: Urgencia;
++    @IsOptional() @IsString() numeroOS?: string;
++    @IsOptional() @IsString() whatsapp?: string;
++    @IsOptional() @IsString() email?: string;
++    @IsOptional() @IsEnum(FormaContato) formaContato?: FormaContato;
++}
+diff --git a/src/presentation/ordem-servico.controller.ts b/src/presentation/ordem-servico.controller.ts
+index e69de29..03d6158 100644
+--- a/src/presentation/ordem-servico.controller.ts
++++ b/src/presentation/ordem-servico.controller.ts
+@@ -0,0 +1,22 @@
++import { Body, Controller, Get, Post } from '@nestjs/common';
++import { CriarOrdemServicoUseCase } from '../application/use-cases/criar-ordem-servico.usecase';
++import { ListarOrdensServicoUseCase } from '../application/use-cases/listar-ordens-servico.usecase';
++import { CriarOrdemServicoDto } from './dto/criar-ordem-servico.dto';
++
++@Controller('ordens-servico')
++export class OrdemServicoController {
++    constructor(
++        private readonly criarUseCase: CriarOrdemServicoUseCase,
++        private readonly listarUseCase: ListarOrdensServicoUseCase,
++    ) {}
++
++    @Post()
++    criar(@Body() dto: CriarOrdemServicoDto) {
++        return this.criarUseCase.execute(dto);
++    }
++
++    @Get()
++    listar() {
++        return this.listarUseCase.execute();
++    }
++}
+diff --git a/src/presentation/ordem-servico.module.ts b/src/presentation/ordem-servico.module.ts
+new file mode 100644
+index 0000000..537424c
+--- /dev/null
++++ b/src/presentation/ordem-servico.module.ts
+@@ -0,0 +1,72 @@
++import { Module } from '@nestjs/common';
++import { OrdemServicoController } from './ordem-servico.controller';
++import { PrismaService } from '../infrastructure/database/prisma.service';
++import { OrdemServicoPrismaRepository } from '../infrastructure/database/ordem-servico.prisma-repository';
++import { PagamentoPrismaRepository } from '../infrastructure/database/pagamento.prisma-repository';
++import { WhatsappAdapter } from '../infrastructure/notification/whatsapp.adapter';
++import { MercadoPagoAdapter } from '../infrastructure/payment/mercado-pago.adapter';
++import { TaxaArmazenagemJob } from '../infrastructure/jobs/taxa-armazenagem.job';
++import { CriarOrdemServicoUseCase } from '../application/use-cases/criar-ordem-servico.usecase';
++import { ListarOrdensServicoUseCase } from '../application/use-cases/listar-ordens-servico.usecase';
++import { RegistrarPagamentoUseCase } from '../application/use-cases/registrar-pagamento.usecase';
++import { AtualizarStatusOSUseCase } from '../application/use-cases/atualizar-status-os.usecase';
++import { GerarLinkPagamentoUseCase } from '../application/use-cases/gerar-link-pagamento.usecase';
++
++export const ORDEM_SERVICO_REPOSITORY = 'ORDEM_SERVICO_REPOSITORY';
++export const PAGAMENTO_REPOSITORY = 'PAGAMENTO_REPOSITORY';
++export const NOTIFIER = 'NOTIFIER';
++export const PAYMENT_GATEWAY = 'PAYMENT_GATEWAY';
++
++@Module({
++    controllers: [OrdemServicoController],
++    providers: [
++        PrismaService,
++        TaxaArmazenagemJob,
++        {
++            provide: ORDEM_SERVICO_REPOSITORY,
++            useFactory: (prisma: PrismaService) => new OrdemServicoPrismaRepository(prisma),
++            inject: [PrismaService],
++        },
++        {
++            provide: PAGAMENTO_REPOSITORY,
++            useFactory: (prisma: PrismaService) => new PagamentoPrismaRepository(prisma),
++            inject: [PrismaService],
++        },
++        {
++            provide: NOTIFIER,
++            useFactory: () => new WhatsappAdapter(),
++        },
++        {
++            provide: PAYMENT_GATEWAY,
++            useFactory: () => new MercadoPagoAdapter(),
++        },
++        {
++            provide: CriarOrdemServicoUseCase,
++            useFactory: (repo: OrdemServicoPrismaRepository) => new CriarOrdemServicoUseCase(repo),
++            inject: [ORDEM_SERVICO_REPOSITORY],
++        },
++        {
++            provide: ListarOrdensServicoUseCase,
++            useFactory: (repo: OrdemServicoPrismaRepository) => new ListarOrdensServicoUseCase(repo),
++            inject: [ORDEM_SERVICO_REPOSITORY],
++        },
++        {
++            provide: RegistrarPagamentoUseCase,
++            useFactory: (repo: PagamentoPrismaRepository) => new RegistrarPagamentoUseCase(repo),
++            inject: [PAGAMENTO_REPOSITORY],
++        },
++        {
++            provide: AtualizarStatusOSUseCase,
++            useFactory: (repo: OrdemServicoPrismaRepository, notifier: WhatsappAdapter) =>
++                new AtualizarStatusOSUseCase(repo, notifier),
++            inject: [ORDEM_SERVICO_REPOSITORY, NOTIFIER],
++        },
++        {
++            provide: GerarLinkPagamentoUseCase,
++            useFactory: (repo: OrdemServicoPrismaRepository, gateway: MercadoPagoAdapter) =>
++                new GerarLinkPagamentoUseCase(repo, gateway),
++            inject: [ORDEM_SERVICO_REPOSITORY, PAYMENT_GATEWAY],
++        },
++    ],
++})
++export class OrdemServicoModule {}
+diff --git a/techprime-os-app/src/app/index.tsx b/techprime-os-app/src/app/index.tsx
+index 8ec3e6f..f47e454 100644
+--- a/techprime-os-app/src/app/index.tsx
++++ b/techprime-os-app/src/app/index.tsx
+@@ -1,98 +1,42 @@
+-import * as Device from 'expo-device';
+-import { Platform, StyleSheet } from 'react-native';
+-import { SafeAreaView } from 'react-native-safe-area-context';
++import { useEffect, useState } from 'react';
++import { View, Text, FlatList, StyleSheet, TouchableOpacity } from 'react-native';
++import { useRouter } from 'expo-router';
+ 
+-import { AnimatedIcon } from '@/components/animated-icon';
+-import { HintRow } from '@/components/hint-row';
+-import { ThemedText } from '@/components/themed-text';
+-import { ThemedView } from '@/components/themed-view';
+-import { WebBadge } from '@/components/web-badge';
+-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
++const API_URL = 'http://SEU_IP_LOCAL:3000'; // troque pro IP da sua máquina na rede
+ 
+-function getDevMenuHint() {
+-  if (Platform.OS === 'web') {
+-    return <ThemedText type="small">use browser devtools</ThemedText>;
+-  }
+-  if (Device.isDevice) {
+-    return (
+-      <ThemedText type="small">
+-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
+-      </ThemedText>
+-    );
+-  }
+-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
+-  return (
+-    <ThemedText type="small">
+-      press <ThemedText type="code">{shortcut}</ThemedText>
+-    </ThemedText>
+-  );
+-}
+-
+-export default function HomeScreen() {
+-  return (
+-    <ThemedView style={styles.container}>
+-      <SafeAreaView style={styles.safeArea}>
+-        <ThemedView style={styles.heroSection}>
+-          <AnimatedIcon />
+-          <ThemedText type="title" style={styles.title}>
+-            Welcome to&nbsp;Expo
+-          </ThemedText>
+-        </ThemedView>
++export default function ListaOS() {
++    const [ordens, setOrdens] = useState<any[]>([]);
++    const router = useRouter();
+ 
+-        <ThemedText type="code" style={styles.code}>
+-          get started
+-        </ThemedText>
++    useEffect(() => {
++        fetch(`${API_URL}/ordens-servico`)
++            .then((r) => r.json())
++            .then(setOrdens);
++    }, []);
+ 
+-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
+-          <HintRow
+-            title="Try editing"
+-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
+-          />
+-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
+-          <HintRow
+-            title="Fresh start"
+-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
+-          />
+-        </ThemedView>
+-
+-        {Platform.OS === 'web' && <WebBadge />}
+-      </SafeAreaView>
+-    </ThemedView>
+-  );
++    return (
++        <View style={styles.container}>
++            <TouchableOpacity style={styles.botao} onPress={() => router.push('/nova')}>
++                <Text style={styles.botaoTexto}>+ Nova OS</Text>
++            </TouchableOpacity>
++            <FlatList
++                data={ordens}
++                keyExtractor={(item) => item.identificador}
++                renderItem={({ item }) => (
++                    <View style={styles.card}>
++                        <Text style={styles.titulo}>OS {item.identificador} — {item.cliente}</Text>
++                        <Text>{item.aparelho} · {item.status}</Text>
++                    </View>
++                )}
++            />
++        </View>
++    );
+ }
+ 
+ const styles = StyleSheet.create({
+-  container: {
+-    flex: 1,
+-    justifyContent: 'center',
+-    flexDirection: 'row',
+-  },
+-  safeArea: {
+-    flex: 1,
+-    paddingHorizontal: Spacing.four,
+-    alignItems: 'center',
+-    gap: Spacing.three,
+-    paddingBottom: BottomTabInset + Spacing.three,
+-    maxWidth: MaxContentWidth,
+-  },
+-  heroSection: {
+-    alignItems: 'center',
+-    justifyContent: 'center',
+-    flex: 1,
+-    paddingHorizontal: Spacing.four,
+-    gap: Spacing.four,
+-  },
+-  title: {
+-    textAlign: 'center',
+-  },
+-  code: {
+-    textTransform: 'uppercase',
+-  },
+-  stepContainer: {
+-    gap: Spacing.three,
+-    alignSelf: 'stretch',
+-    paddingHorizontal: Spacing.three,
+-    paddingVertical: Spacing.four,
+-    borderRadius: Spacing.four,
+-  },
+-});
++    container: { flex: 1, padding: 16 },
++    botao: { backgroundColor: '#2563eb', padding: 16, borderRadius: 8, marginBottom: 16 },
++    botaoTexto: { color: '#fff', textAlign: 'center', fontSize: 18, fontWeight: 'bold' },
++    card: { padding: 16, borderWidth: 1, borderColor: '#ddd', borderRadius: 8, marginBottom: 8 },
++    titulo: { fontSize: 16, fontWeight: 'bold' },
++});
+\ No newline at end of file
+diff --git a/src/app/nova.tsx b/techprime-os-app/src/app/nova.tsx
+similarity index 100%
+rename from src/app/nova.tsx
+rename to techprime-os-app/src/app/nova.tsx
+diff --git a/tsconfig.build.json b/tsconfig.build.json
+index 64f86c6..c296a13 100644
+--- a/tsconfig.build.json
++++ b/tsconfig.build.json
+@@ -1,4 +1,4 @@
+ {
+   "extends": "./tsconfig.json",
+-  "exclude": ["node_modules", "test", "dist", "**/*spec.ts"]
++  "exclude": ["node_modules", "test", "dist", "**/*spec.ts", "techprime-os-app"]
+ }
+diff --git a/tsconfig.json b/tsconfig.json
+index aba29b0..fae5674 100644
+--- a/tsconfig.json
++++ b/tsconfig.json
+@@ -21,5 +21,10 @@
+     "noImplicitAny": false,
+     "strictBindCallApply": false,
+     "noFallthroughCasesInSwitch": false
+-  }
+-}
++  },
++  "exclude": [
++    "node_modules",
++    "techprime-os-app",
++    "dist"
++  ]
++}
+\ No newline at end of file

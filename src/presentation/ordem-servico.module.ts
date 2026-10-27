@@ -11,14 +11,18 @@ import { ListarOrdensServicoUseCase } from '../application/use-cases/listar-orde
 import { RegistrarPagamentoUseCase } from '../application/use-cases/registrar-pagamento.usecase';
 import { AtualizarStatusOSUseCase } from '../application/use-cases/atualizar-status-os.usecase';
 import { GerarLinkPagamentoUseCase } from '../application/use-cases/gerar-link-pagamento.usecase';
-
+import { ModeloMensagemPrismaRepository } from '../infrastructure/database/modelo-mensagem.prisma-repository';
+import { ListarModelosMensagemUseCase } from '../application/use-cases/listar-modelo-mensagem.usecase';
+import { SalvarModeloMensagemUseCase } from '../application/use-cases/salvar-modelo-mensagem.usecase';
+import { ModeloMensagemController } from './modelo-mensagem.controller';
+export const MODELO_MENSAGEM_REPOSITORY = 'MODELO_MENSAGEM_REPOSITORY';
 export const ORDEM_SERVICO_REPOSITORY = 'ORDEM_SERVICO_REPOSITORY';
 export const PAGAMENTO_REPOSITORY = 'PAGAMENTO_REPOSITORY';
 export const NOTIFIER = 'NOTIFIER';
 export const PAYMENT_GATEWAY = 'PAYMENT_GATEWAY';
 
 @Module({
-    controllers: [OrdemServicoController],
+    controllers: [OrdemServicoController, ModeloMensagemController],
     providers: [
         PrismaService,
         TaxaArmazenagemJob,
@@ -30,6 +34,11 @@ export const PAYMENT_GATEWAY = 'PAYMENT_GATEWAY';
         {
             provide: PAGAMENTO_REPOSITORY,
             useFactory: (prisma: PrismaService) => new PagamentoPrismaRepository(prisma),
+            inject: [PrismaService],
+        },
+        {
+            provide: MODELO_MENSAGEM_REPOSITORY,
+            useFactory: (prisma: PrismaService) => new ModeloMensagemPrismaRepository(prisma),
             inject: [PrismaService],
         },
         {
@@ -50,6 +59,16 @@ export const PAYMENT_GATEWAY = 'PAYMENT_GATEWAY';
             useFactory: (repo: OrdemServicoPrismaRepository) => new ListarOrdensServicoUseCase(repo),
             inject: [ORDEM_SERVICO_REPOSITORY],
         },
+                {
+            provide: ListarModelosMensagemUseCase,
+            useFactory: (repo: ModeloMensagemPrismaRepository) => new ListarModelosMensagemUseCase(repo),
+            inject: [MODELO_MENSAGEM_REPOSITORY],
+        },
+        {
+            provide: SalvarModeloMensagemUseCase,
+            useFactory: (repo: ModeloMensagemPrismaRepository) => new SalvarModeloMensagemUseCase(repo),
+            inject: [MODELO_MENSAGEM_REPOSITORY],
+        },
         {
             provide: RegistrarPagamentoUseCase,
             useFactory: (repo: PagamentoPrismaRepository) => new RegistrarPagamentoUseCase(repo),
@@ -57,9 +76,9 @@ export const PAYMENT_GATEWAY = 'PAYMENT_GATEWAY';
         },
         {
             provide: AtualizarStatusOSUseCase,
-            useFactory: (repo: OrdemServicoPrismaRepository, notifier: WhatsappAdapter) =>
-                new AtualizarStatusOSUseCase(repo, notifier),
-            inject: [ORDEM_SERVICO_REPOSITORY, NOTIFIER],
+            useFactory: (repo: OrdemServicoPrismaRepository, modeloRepo: ModeloMensagemPrismaRepository) =>
+                new AtualizarStatusOSUseCase(repo, modeloRepo),
+            inject: [ORDEM_SERVICO_REPOSITORY, MODELO_MENSAGEM_REPOSITORY],
         },
         {
             provide: GerarLinkPagamentoUseCase,
